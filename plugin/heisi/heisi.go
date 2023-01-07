@@ -2,11 +2,17 @@
 package heisi
 
 import (
+	"errors"
 	"math/rand"
+	"os"
 	"strconv"
+	"time"
 	"unsafe"
 
+	"github.com/FloatTech/AnimeAPI/setu"
 	fbctxext "github.com/FloatTech/floatbox/ctxext"
+	"github.com/FloatTech/floatbox/file"
+	"github.com/FloatTech/floatbox/web"
 	ctrl "github.com/FloatTech/zbpctrl"
 	"github.com/FloatTech/zbputils/control"
 	"github.com/FloatTech/zbputils/ctxext"
@@ -25,10 +31,43 @@ var (
 )
 
 func init() { // 插件主体
+	p, err := setu.NewPool(setu.DefaultPoolDir,
+		func(s string) (string, error) {
+			if s != "黑丝" && s != "白丝" && s != "jk" && s != "巨乳" && s != "足控" && s != "网红" {
+				return "", errors.New("invalid call")
+			}
+			typ := setu.DefaultPoolDir + "/" + s
+			if file.IsNotExist(typ) {
+				err := os.MkdirAll(typ, 0755)
+				if err != nil {
+					return "", err
+				}
+			}
+			var pic item
+			switch s {
+			case "黑丝":
+				pic = heisiPic[rand.Intn(len(heisiPic))]
+			case "白丝":
+				pic = baisiPic[rand.Intn(len(baisiPic))]
+			case "jk":
+				pic = jkPic[rand.Intn(len(jkPic))]
+			case "巨乳":
+				pic = jurPic[rand.Intn(len(jurPic))]
+			case "足控":
+				pic = zukPic[rand.Intn(len(zukPic))]
+			case "网红":
+				pic = mcnPic[rand.Intn(len(mcnPic))]
+			}
+			return pic.String(), nil
+		}, web.GetData, time.Minute)
+	if err != nil {
+		panic(err)
+	}
+
 	engine := control.Register("heisi", &ctrl.Options[*zero.Ctx]{
 		DisableOnDefault: false,
-		Help: "黑丝\n" +
-			"- 来点黑丝\n- 来点白丝\n- 来点jk\n- 来点巨乳\n- 来点足控\n- 来点网红",
+		Brief:            "黑丝",
+		Help:             "- 来点黑丝\n- 来点白丝\n- 来点jk\n- 来点巨乳\n- 来点足控\n- 来点网红",
 		PublicDataFolder: "Heisi",
 	})
 
@@ -65,22 +104,12 @@ func init() { // 插件主体
 	})).SetBlock(true).
 		Handle(func(ctx *zero.Ctx) {
 			matched := ctx.State["matched"].(string)
-			var pic item
-			switch matched {
-			case "来点黑丝":
-				pic = heisiPic[rand.Intn(len(heisiPic))]
-			case "来点白丝":
-				pic = baisiPic[rand.Intn(len(baisiPic))]
-			case "来点jk":
-				pic = jkPic[rand.Intn(len(jkPic))]
-			case "来点巨乳":
-				pic = jurPic[rand.Intn(len(jurPic))]
-			case "来点足控":
-				pic = zukPic[rand.Intn(len(zukPic))]
-			case "来点网红":
-				pic = mcnPic[rand.Intn(len(mcnPic))]
+			pic, err := p.Roll(matched[3*2:])
+			if err != nil {
+				ctx.SendChain(message.Text("ERROR: ", err))
+				return
 			}
-			m := message.Message{ctxext.FakeSenderForwardNode(ctx, message.Image(pic.String()))}
+			m := message.Message{ctxext.FakeSenderForwardNode(ctx, message.Image(pic))}
 			if id := ctx.Send(m).ID(); id == 0 {
 				ctx.SendChain(message.Text("ERROR: 可能被风控或下载图片用时过长，请耐心等待"))
 			}
